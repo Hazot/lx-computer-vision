@@ -79,8 +79,8 @@ def detect_lane_markings(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     yellow_upper_hsv = np.array([45, 255, 255])
 
     # 1) (Optional) Find the horizon and remove it
-    mask_ground = np.ones((height, width), dtype=np.uint8)  # TODO: CHANGE ME
-    mask_ground[:170, :] = 0
+    mask_ground = np.ones((height, width), dtype=np.uint8)
+    # mask_ground[:175, :] = 0
 
     # 2) Smooth the image using a Gaussian kernel
     img_gaussian_filter = cv2.GaussianBlur(img, (0, 0), sigma_gaussian_blur)
