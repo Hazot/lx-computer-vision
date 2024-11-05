@@ -78,9 +78,6 @@ def detect_lane_markings(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     yellow_lower_hsv = np.array([15, 60, 60])
     yellow_upper_hsv = np.array([45, 255, 255])
 
-    # Convert the image to the HSV color space for easier color filtering
-    imghsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-
     # 1) (Optional) Find the horizon and remove it
     mask_ground = np.ones((height, width), dtype=np.uint8)  # TODO: CHANGE ME
     mask_ground[:170, :] = 0
