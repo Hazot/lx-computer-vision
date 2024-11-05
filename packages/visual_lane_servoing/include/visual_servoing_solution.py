@@ -15,8 +15,14 @@ def get_steer_matrix_left_lane_markings(shape: Tuple[int, int]) -> np.ndarray:
     """
 
     # TODO: implement your own solution here
-    steer_matrix_left = np.random.rand(*shape)
-    # ---
+    steer_matrix_left = np.zeros(shape)
+    h, w = shape
+
+    # Create a gradient matrix that gives higher weights to left side markings
+    for i in range(h):
+        for j in range(w // 2):  # Left half of the image
+            steer_matrix_left[i, j] = (w // 2 - j) / (w // 2)
+
     return steer_matrix_left
 
 
@@ -31,8 +37,14 @@ def get_steer_matrix_right_lane_markings(shape: Tuple[int, int]) -> np.ndarray:
     """
 
     # TODO: implement your own solution here
-    steer_matrix_right = np.random.rand(*shape)
-    # ---
+    steer_matrix_right = np.zeros(shape)
+    h, w = shape
+
+    # Create a gradient matrix that gives higher weights to right side markings
+    for i in range(h):
+        for j in range(w // 2, w):  # Right half of the image
+            steer_matrix_right[i, j] = (j - w // 2) / (w // 2)
+
     return steer_matrix_right
 
 
@@ -44,10 +56,84 @@ def detect_lane_markings(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         mask_left_edge:   Masked image for the dashed-yellow line (numpy.ndarray)
         mask_right_edge:  Masked image for the solid-white line (numpy.ndarray)
     """
-    h, w, _ = image.shape
+    height, width, _ = image.shape
+
+    imgbgr = image
+
+    # OpenCV uses BGR by default, whereas matplotlib uses RGB, so we generate an RGB version for 
+    # the sake of visualization
+    imgrgb = cv2.cvtColor(imgbgr, cv2.COLOR_BGR2RGB)
+
+    # Convert the image to HSV for any color-based filtering
+    imghsv = cv2.cvtColor(imgbgr, cv2.COLOR_BGR2HSV)
+
+    # Most of our operations will be performed on the grayscale version
+    img = cv2.cvtColor(imgbgr, cv2.COLOR_BGR2GRAY)
 
     # TODO: implement your own solution here
-    mask_left_edge = np.random.rand(h, w)
-    mask_right_edge = np.random.rand(h, w)
+    # Parameters to play with
+    sigma_gaussian_blur = 4
+    white_lower_hsv = np.array([0, 0, 120])
+    white_upper_hsv = np.array([180, 75, 255])
+    yellow_lower_hsv = np.array([15, 60, 60])
+    yellow_upper_hsv = np.array([45, 255, 255])
+
+    # Convert the image to the HSV color space for easier color filtering
+    imghsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+    # 1) (Optional) Find the horizon and remove it
+    mask_ground = np.ones((height, width), dtype=np.uint8)  # TODO: CHANGE ME
+    mask_ground[:170, :] = 0
+
+    # 2) Smooth the image using a Gaussian kernel
+    img_gaussian_filter = cv2.GaussianBlur(img, (0, 0), sigma_gaussian_blur)
+
+    # 3) Convolve the image with the Sobel operator (filter) to compute the
+    # numerical derivatives in the x and y directions with gaussian filter
+    sobelx = cv2.Sobel(img_gaussian_filter, cv2.CV_64F, 1, 0)
+    sobely = cv2.Sobel(img_gaussian_filter, cv2.CV_64F, 0, 1)
+    Gmag = np.sqrt(sobelx * sobelx + sobely * sobely)  # magnitude of gradients
+
+    # 4) Make a mask to clip filter out weaker gradients (form of non-maximal suppression)
+    threshold = np.max(Gmag) // 5  # CHANGE ME
+    mask_mag = Gmag > threshold
+
+    # 5) Let's create masks for the left and right halves of the image
+    mask_left = np.ones(sobelx.shape)
+    mask_left[:, int(np.floor(width / 2)) : width + 1] = 0
+    mask_right = np.ones(sobelx.shape)
+    mask_right[:, 0 : int(np.floor(width / 2))] = 0
+
+    # 6) Generate a mask that identifies pixels based on the sign of their x-derivative
+    # In the left-half image, we are interested in the right-half of the dashed yellow line,
+    # which corresponds to negative x- and y-derivatives
+    # In the right-half image, we are interested in the left-half of the solid white line,
+    # which correspons to a positive x-derivative and a negative y-derivative
+    mask_sobelx_pos = sobelx > 0
+    mask_sobelx_neg = sobelx < 0
+    mask_sobely_pos = sobely > 0
+    mask_sobely_neg = sobely < 0
+
+    # 7) White and yellow masks
+    mask_yellow = cv2.inRange(imghsv, yellow_lower_hsv, yellow_upper_hsv)
+    mask_white = cv2.inRange(imghsv, white_lower_hsv, white_upper_hsv)
+
+    # Let's generate the complete set of masks, including those based on color
+    mask_left_edge = (
+        mask_ground
+        * mask_left
+        * mask_mag
+        * mask_sobelx_neg
+        * mask_sobely_neg
+        * mask_yellow
+    )
+    mask_right_edge = (
+        mask_ground
+        * mask_right
+        * mask_mag
+        * mask_sobelx_pos
+        * mask_sobely_neg
+        * mask_white
+    )
 
     return mask_left_edge, mask_right_edge
