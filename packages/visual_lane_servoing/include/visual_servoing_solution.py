@@ -17,17 +17,19 @@ def get_steer_matrix_left_lane_markings(shape: Tuple[int, int]) -> np.ndarray:
     # TODO: implement your own solution here
     steer_matrix_left = np.zeros(shape)
 
+    width = shape[0]
     half = shape[1] // 2
     # Sol1
     # steer_matrix_left[:, :half] = -0.3
     # steer_matrix_left[: half // 4 + 1, :half] = 0.1
 
-    # Sol2
-    steer_matrix_left[int(shape[0] * 5 / 8) :, :half] = -0.01
-
-    # Sol3
-    steer_matrix_left[:, shape[1] // 3 :] = -1
-
+    # Create a gradient that starts high from the middle bottom and decreases toward the left top corner
+    for y in range(width):
+        for x in range(half):
+            # Calculate weight based on distance from middle bottom
+            weight = 0.3 * ((width - y) / width) * ((half - x) / half)
+            steer_matrix_left[y, x] = weight
+    
     return steer_matrix_left
 
 
@@ -46,15 +48,17 @@ def get_steer_matrix_right_lane_markings(shape: Tuple[int, int]) -> np.ndarray:
 
     # Sol1
     half = shape[1] // 2
+    width = shape[0]
     # steer_matrix_right[half // 4 + 1 :, half:] = 0.2
     # steer_matrix_right[: half // 4 + 1, half:] = 0.1
 
-    # Sol2
-    # steer_matrix_right[int(shape[0] * 5 / 8) :, half:] = 0.01
-
-    # Sol3
-    steer_matrix_right[:, : shape[1] * 2 // 3] = 1
-
+    # Create a gradient that starts high from the middle bottom and decreases toward the right top corner
+    for y in range(width):
+        for x in range(half, shape[1]):
+            # Calculate weight based on distance from middle bottom
+            weight = -0.2 * ((width - y) / width) * ((x - half) / half)
+            steer_matrix_right[y, x] = weight
+    
     return steer_matrix_right
 
 
@@ -70,26 +74,29 @@ def detect_lane_markings(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     height, width, _ = image.shape
 
     # Parameters to play around with
-    sigma_gaussian_blur = 4
-    white_lower_hsv = np.array([0, 0, 120])
-    white_upper_hsv = np.array([180, 75, 255])
-    yellow_lower_hsv = np.array([15, 60, 60])
+    sigma = 4
+    percentile_threshold = 90  # To keep the top 10% (if set to 90)
+    white_sensitivity = 75
+    yellow_sensitivity = 60
+
+    # Parameters (hard) for colors
+    white_lower_hsv = np.array([0, 0, 255 - white_sensitivity])
+    white_upper_hsv = np.array([179, white_sensitivity, 255])
+    yellow_lower_hsv = np.array([15, yellow_sensitivity, yellow_sensitivity])
     yellow_upper_hsv = np.array([45, 255, 255])
 
-    # 0) Processing the image
+    # 1) Processing the image
     imgbgr = image
-    # OpenCV uses BGR by default, whereas matplotlib uses RGB
-    # Convert the image to HSV for any color-based filtering
     imghsv = cv2.cvtColor(imgbgr, cv2.COLOR_BGR2HSV)
-    # Most of our operations will be performed on the grayscale version
     img = cv2.cvtColor(imgbgr, cv2.COLOR_BGR2GRAY)
 
-    # 1) (Optional) Find the horizon and remove it
-    # mask_ground = np.ones((height, width), dtype=np.uint8)
-    # mask_ground[:175, :] = 0
+    # 1.5) (Optional) Find the horizon and remove it
+    # Naive way
+    mask_ground = np.ones((height, width), dtype=np.uint8)
+    mask_ground[:200, :] = 0
 
     # 2) Smooth the image using a Gaussian kernel
-    img_gaussian_filter = cv2.GaussianBlur(img, (0, 0), sigma_gaussian_blur)
+    img_gaussian_filter = cv2.GaussianBlur(img, (0, 0), sigma)
 
     # 3) Convolve the image with the Sobel operator (filter) to compute the
     sobelx = cv2.Sobel(img_gaussian_filter, cv2.CV_64F, 1, 0)
@@ -97,7 +104,9 @@ def detect_lane_markings(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     Gmag = np.sqrt(sobelx * sobelx + sobely * sobely)  # magnitude of gradients
 
     # 4) Make a mask to clip filter out weaker gradients (form of non-maximal suppression)
-    threshold = np.max(Gmag) // 5
+    # threshold = np.percentile(Gmag, percentile_threshold)
+    threshold = np.max(Gmag) // 5  # Testing with this threshold to use most gradient
+    # threshold = 40
     mask_mag = Gmag > threshold
 
     # 5) Let's create masks for the left and right halves of the image
@@ -118,10 +127,10 @@ def detect_lane_markings(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
 
     # Let's generate the complete set of masks, including those based on color
     mask_left_edge = (
-        mask_left * mask_mag * mask_sobelx_neg * mask_sobely_neg * mask_yellow
+        mask_ground * mask_left * mask_mag * mask_sobelx_neg * mask_sobely_neg * mask_yellow
     )
     mask_right_edge = (
-        mask_right * mask_mag * mask_sobelx_pos * mask_sobely_neg * mask_white
+        mask_ground * mask_right * mask_mag * mask_sobelx_pos * mask_sobely_neg * mask_white
     )
 
     return mask_left_edge, mask_right_edge
