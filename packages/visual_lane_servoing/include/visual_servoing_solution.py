@@ -16,20 +16,18 @@ def get_steer_matrix_left_lane_markings(shape: Tuple[int, int]) -> np.ndarray:
 
     # TODO: implement your own solution here
     steer_matrix_left = np.zeros(shape)
+    height, width = shape
+    left_region_width = width // 4  # Adjustable width
+    decay_rate = -0.002
 
-    width = shape[0]
-    half = shape[1] // 2
-    # Sol1
-    # steer_matrix_left[:, :half] = -0.3
-    # steer_matrix_left[: half // 4 + 1, :half] = 0.1
+    # Generate the decay values along the vertical axis
+    decay_values = -np.exp(decay_rate * np.arange(height // 2, height)[::-1])
 
-    # Create a gradient that starts high from the middle bottom and decreases toward the left top corner
-    for y in range(width):
-        for x in range(half):
-            # Calculate weight based on distance from middle bottom
-            weight = 0.3 * ((width - y) / width) * ((half - x) / half)
-            steer_matrix_left[y, x] = weight
-    
+    # Apply decay values to the left region in the bottom half of the matrix
+    steer_matrix_left[height // 2 :, width // 2 - left_region_width : width // 2] = (
+        decay_values[:, np.newaxis]
+    )
+
     return steer_matrix_left
 
 
@@ -45,20 +43,18 @@ def get_steer_matrix_right_lane_markings(shape: Tuple[int, int]) -> np.ndarray:
 
     # TODO: implement your own solution here
     steer_matrix_right = np.zeros(shape)
+    height, width = shape
+    right_region_width = width // 4  # Adjustable widthf
+    decay_rate = -0.002
 
-    # Sol1
-    half = shape[1] // 2
-    width = shape[0]
-    # steer_matrix_right[half // 4 + 1 :, half:] = 0.2
-    # steer_matrix_right[: half // 4 + 1, half:] = 0.1
+    # Generate the decay values along the vertical axis
+    decay_values = np.exp(decay_rate * np.arange(height // 2, height)[::-1])
 
-    # Create a gradient that starts high from the middle bottom and decreases toward the right top corner
-    for y in range(width):
-        for x in range(half, shape[1]):
-            # Calculate weight based on distance from middle bottom
-            weight = -0.2 * ((width - y) / width) * ((x - half) / half)
-            steer_matrix_right[y, x] = weight
-    
+    # Apply decay values to the right region in the bottom half of the matrix
+    steer_matrix_right[height // 2 :, width // 2 : width // 2 + right_region_width] = (
+        decay_values[:, np.newaxis]
+    )
+
     return steer_matrix_right
 
 
@@ -75,14 +71,11 @@ def detect_lane_markings(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
 
     # Parameters to play around with
     sigma = 4
-    percentile_threshold = 90  # To keep the top 10% (if set to 90)
-    white_sensitivity = 75
-    yellow_sensitivity = 60
 
-    # Parameters (hard) for colors
-    white_lower_hsv = np.array([0, 0, 255 - white_sensitivity])
-    white_upper_hsv = np.array([179, white_sensitivity, 255])
-    yellow_lower_hsv = np.array([15, yellow_sensitivity, yellow_sensitivity])
+    # Colors
+    white_lower_hsv = np.array([0, 0, 167])
+    white_upper_hsv = np.array([179, 65, 255])
+    yellow_lower_hsv = np.array([20, 60, 75])
     yellow_upper_hsv = np.array([45, 255, 255])
 
     # 1) Processing the image
@@ -91,9 +84,26 @@ def detect_lane_markings(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     img = cv2.cvtColor(imgbgr, cv2.COLOR_BGR2GRAY)
 
     # 1.5) (Optional) Find the horizon and remove it
-    # Naive way
-    mask_ground = np.ones((height, width), dtype=np.uint8)
-    mask_ground[:200, :] = 0
+    H = np.array(
+        [
+            -4.137917960301845e-05,
+            -0.00011445854191468058,
+            -0.1595567007347241,
+            0.0008382870319844166,
+            -4.141689222457687e-05,
+            -0.2518201638170328,
+            -0.00023561657746150284,
+            -0.005370140574116084,
+            0.9999999999999999,
+        ]
+    )
+
+    H = np.reshape(H, (3, 3))
+    Hinv = np.linalg.inv(H)
+
+    mask_ground = np.ones(img.shape, dtype=np.uint8)
+    mask_ground = cv2.warpPerspective(mask_ground, Hinv, (width, height))
+    mask_ground[:175] = 0
 
     # 2) Smooth the image using a Gaussian kernel
     img_gaussian_filter = cv2.GaussianBlur(img, (0, 0), sigma)
@@ -104,10 +114,15 @@ def detect_lane_markings(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     Gmag = np.sqrt(sobelx * sobelx + sobely * sobely)  # magnitude of gradients
 
     # 4) Make a mask to clip filter out weaker gradients (form of non-maximal suppression)
-    # threshold = np.percentile(Gmag, percentile_threshold)
-    threshold = np.max(Gmag) // 5  # Testing with this threshold to use most gradient
-    # threshold = 40
-    mask_mag = Gmag > threshold
+    # percentile_threshold_yellow = 90  # To keep the top 10% (if set to 90)
+    # threshold_white = np.percentile(Gmag, percentile_threshold_yellow)
+
+    # percentile_threshold_yellow = 85
+    # threshold_yellow = np.percentile(Gmag, percentile_threshold_yellow)
+    threshold_yellow = np.max(Gmag) // 6
+    threshold_white = np.max(Gmag) // 4
+    mask_mag_yellow = Gmag > threshold_yellow
+    mask_mag_white = Gmag > threshold_white
 
     # 5) Let's create masks for the left and right halves of the image
     mask_left = np.ones(sobelx.shape)
@@ -127,10 +142,20 @@ def detect_lane_markings(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
 
     # Let's generate the complete set of masks, including those based on color
     mask_left_edge = (
-        mask_ground * mask_left * mask_mag * mask_sobelx_neg * mask_sobely_neg * mask_yellow
+        mask_ground
+        * mask_left
+        * mask_mag_yellow
+        * mask_sobelx_neg
+        * mask_sobely_neg
+        * mask_yellow
     )
     mask_right_edge = (
-        mask_ground * mask_right * mask_mag * mask_sobelx_pos * mask_sobely_neg * mask_white
+        mask_ground
+        * mask_right
+        * mask_mag_white
+        * mask_sobelx_pos
+        * mask_sobely_neg
+        * mask_white
     )
 
     return mask_left_edge, mask_right_edge
