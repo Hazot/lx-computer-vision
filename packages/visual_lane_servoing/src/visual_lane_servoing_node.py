@@ -38,7 +38,7 @@ class LaneServoingNode(DTROS):
         # get the name of the robot
         self.veh = rospy.get_namespace().strip("/")
 
-        self.v_0 = 0.30  # Forward velocity command
+        self.v_0 = 0.20  # Forward velocity command (defaults were 0.15 and now 0.30)
 
         # The following are used for scaling
         self.steer_max = -1

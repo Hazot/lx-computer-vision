@@ -17,11 +17,13 @@ def get_steer_matrix_left_lane_markings(shape: Tuple[int, int]) -> np.ndarray:
     # TODO: implement your own solution here
     steer_matrix_left = np.zeros(shape)
     height, width = shape
-    left_region_width = width // 4  # Adjustable width
-    decay_rate = -0.002
+    left_region_width = width // 5  # Adjustable width
+    decay_rate = 0.002
+    weight = -1.6
 
     # Generate the decay values along the vertical axis
-    decay_values = -np.exp(decay_rate * np.arange(height // 2, height)[::-1])
+    decay_values = weight + np.exp(decay_rate * np.arange(height // 2, height))
+    decay_values *= -1
 
     # Apply decay values to the left region in the bottom half of the matrix
     steer_matrix_left[height // 2 :, width // 2 - left_region_width : width // 2] = (
@@ -44,11 +46,12 @@ def get_steer_matrix_right_lane_markings(shape: Tuple[int, int]) -> np.ndarray:
     # TODO: implement your own solution here
     steer_matrix_right = np.zeros(shape)
     height, width = shape
-    right_region_width = width // 4  # Adjustable widthf
-    decay_rate = -0.002
+    right_region_width = width // 5  # Adjustable widthf
+    decay_rate = 0.002
+    weight = -1.6
 
     # Generate the decay values along the vertical axis
-    decay_values = np.exp(decay_rate * np.arange(height // 2, height)[::-1])
+    decay_values = (weight + np.exp(decay_rate * np.arange(height // 2, height)))
 
     # Apply decay values to the right region in the bottom half of the matrix
     steer_matrix_right[height // 2 :, width // 2 : width // 2 + right_region_width] = (
