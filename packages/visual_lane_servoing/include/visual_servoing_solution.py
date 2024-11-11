@@ -76,8 +76,13 @@ def detect_lane_markings(image: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     sigma = 4
 
     # Colors
-    white_lower_hsv = np.array([0, 0, 167])
-    white_upper_hsv = np.array([179, 65, 255])
+    # white_lower_hsv = np.array([0, 0, 167])
+    # white_upper_hsv = np.array([179, 65, 255])
+    # yellow_lower_hsv = np.array([20, 60, 75])
+    # yellow_upper_hsv = np.array([45, 255, 255])
+
+    white_lower_hsv = np.array([0, 0, 175])
+    white_upper_hsv = np.array([179, 60, 255])
     yellow_lower_hsv = np.array([20, 60, 75])
     yellow_upper_hsv = np.array([45, 255, 255])
 
